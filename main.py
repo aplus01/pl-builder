@@ -233,6 +233,76 @@ def cmd_list_playlists(youtube, args) -> None:
     print_playlists(playlists)
 
 
+def cmd_batch(youtube, args) -> None:
+    """Read a text file (one query per line), search each, and add to a playlist."""
+    file_path = Path(args.file)
+    if not file_path.exists():
+        print(f"[error] File '{file_path}' not found.")
+        return
+
+    lines = [line.strip() for line in file_path.read_text().splitlines() if line.strip()]
+    if not lines:
+        print("[error] File is empty or contains no valid queries.")
+        return
+
+    print(f"\n[batch] Found {len(lines)} queries in '{file_path}':")
+    for i, line in enumerate(lines, 1):
+        print(f"  {i:>3}. {line}")
+
+    # Pick or create playlist first
+    print("\n[playlists] Fetching your playlists...")
+    playlists = list_playlists(youtube)
+    print_playlists(playlists)
+    print(f"  {len(playlists) + 1:>2}. + Create new playlist")
+    print()
+
+    raw = input("Select playlist number: ").strip()
+    idx = int(raw)
+
+    if idx == len(playlists) + 1:
+        title = input("New playlist title: ").strip()
+        privacy = input("Privacy (public/unlisted/private) [private]: ").strip() or "private"
+        playlist = create_playlist(youtube, title, privacy=privacy)
+        print(f"[created] '{playlist['title']}' ({playlist['playlistId']})")
+    elif 1 <= idx <= len(playlists):
+        playlist = playlists[idx - 1]
+    else:
+        print("[error] Invalid selection.")
+        return
+
+    auto = not args.interactive
+    added = 0
+    skipped = 0
+
+    for i, query in enumerate(lines, 1):
+        print(f"\n[{i}/{len(lines)}] Searching for '{query}'...")
+        videos = search_videos(youtube, query, args.max_results)
+        if not videos:
+            print("  [skip] No results found.")
+            skipped += 1
+            continue
+
+        if auto:
+            selected = [videos[0]]
+            print(f"  [auto] Top result: {videos[0]['title'][:70]}")
+        else:
+            print_videos(videos)
+            selected = pick_from_list(videos, "videos to add")
+            if not selected:
+                print("  [skip] No videos selected.")
+                skipped += 1
+                continue
+
+        for v in selected:
+            success = add_video_to_playlist(youtube, playlist["playlistId"], v["videoId"])
+            status = "✓" if success else "✗"
+            print(f"  {status} {v['title'][:70]}")
+            if success:
+                added += 1
+
+    print(f"\n[done] Added {added} video(s), skipped {skipped} query/queries.")
+
+
 def cmd_add_by_url(youtube, args) -> None:
     """Add a specific video URL/ID to a playlist."""
     video_input = args.video or input("Video URL or ID: ").strip()
@@ -283,6 +353,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_add = sub.add_parser("add", help="Add a specific video by URL or ID")
     p_add.add_argument("video", nargs="?", default=None, help="YouTube video URL or ID")
 
+    # batch from text file
+    p_batch = sub.add_parser("batch", help="Search and add videos from a text file (one query per line)")
+    p_batch.add_argument("file", help="Path to text file with one search query per line")
+    p_batch.add_argument("-n", "--max-results", type=int, default=5, help="Results per query (default: 5)")
+    p_batch.add_argument("-i", "--interactive", action="store_true", help="Pick videos manually for each query (default: auto-select top result)")
+
     return parser
 
 
@@ -303,6 +379,8 @@ def main():
             cmd_list_playlists(youtube, args)
         elif args.command == "add":
             cmd_add_by_url(youtube, args)
+        elif args.command == "batch":
+            cmd_batch(youtube, args)
     except HttpError as e:
         print(f"[api error] {e}")
         sys.exit(1)
