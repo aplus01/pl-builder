@@ -1,0 +1,12 @@
+{
+  "name": "epl-pl-builder",
+  "version": "1.0.0",
+  "description": "A terminal app to search YouTube and add videos to your playlists.",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
